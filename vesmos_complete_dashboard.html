@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vesmos — Complete WebSocket Dashboard</title>
+<style>
+:root{
+  --bg:#0d0f17; --panel:#0f1116; --muted:#9aa3b2; --accent:#2563eb; --accent2:#0ea5a1; --danger:#ef4444;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);color:#d6d8e0}
+header{padding:12px 16px;background:#0a0c12;display:flex;align-items:center;border-bottom:1px solid #151722}
+.brand{font-weight:800;margin-left:10px}
+.container{display:flex;height:calc(100vh - 56px);overflow:hidden}
+.sidebar{width:340px;padding:14px;background:var(--panel);border-right:1px solid #151722;overflow:auto}
+.main{flex:1;padding:14px;overflow:auto}
+input,textarea,select,button{width:100%;padding:8px;border-radius:6px;border:1px solid #1f2430;background:#12141b;color:inherit}
+textarea{min-height:90px}
+.row{display:flex;gap:8px}
+.row > *{flex:1}
+.btn{background:var(--accent);color:#fff;border:0;cursor:pointer;padding:8px 10px}
+.btn-ghost{background:transparent;border:1px solid #222;color:#bfc7d6}
+.panel{background:var(--panel);padding:10px;border-radius:8px;margin-bottom:12px;border:1px solid #151722}
+.small{font-size:12px;color:var(--muted)}
+#log,#jsonView,#historyBox,#errorsBox,#hexView{height:260px;overflow:auto;padding:10px;background:#06070a;border-radius:8px;border:1px solid #151722;font-family:monospace;white-space:pre-wrap}
+.stat-grid{display:flex;gap:12px;margin-bottom:12px}
+.stat{flex:1;padding:8px;border-radius:8px;text-align:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent)}
+.tabs{display:flex;gap:8px;margin-bottom:10px}
+.tab{padding:8px 12px;border-radius:8px;background:var(--panel);cursor:pointer;border:1px solid #151722;color:#bfc7d6}
+.tab.active{background:#1f2a4a;border-color:var(--accent);color:#e7f0ff}
+footer{padding:8px 12px;color:var(--muted);font-size:12px}
+
+/* responsive */
+@media(max-width:900px){.container{flex-direction:column}.sidebar{width:100%;border-right:none;border-bottom:1px solid #151722}}
+</style>
+</head>
+<body>
+<header>
+  <div><strong>Vesmos</strong></div>
+  <div class="brand">Complete WebSocket Dashboard</div>
+  <div style="margin-left:auto;display:flex;gap:8px">
+    <button id="exportPackage" class="btn-ghost">Export Settings</button>
+    <button id="helpBtn" class="btn">Help</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="sidebar">
+    <div class="panel">
+      <h3 class="small">Connection</h3>
+      <input id="wsUrl" placeholder="wss://echo.websocket.events" />
+      <div style="margin-top:8px" class="row">
+        <input id="subprotocol" placeholder="Subprotocol (optional)" />
+        <input id="origin" placeholder="Origin (optional)" />
+      </div>
+      <div style="margin-top:8px" class="row">
+        <button id="connectBtn" class="btn">Connect</button>
+        <button id="disconnectBtn" class="btn-ghost">Disconnect</button>
+      </div>
+      <div style="margin-top:8px" class="small">Send as: <select id="sendType"><option value="text">Text</option><option value="binary">Binary (file)</option></select></div>
+      <input type="file" id="binaryFile" style="display:none;margin-top:8px" />
+    </div>
+
+    <div class="panel">
+      <h3 class="small">Message / Scheduler</h3>
+      <textarea id="msgBox" placeholder='{"cmd":"ping"}'></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="sendBtn" class="btn">Send</button>
+        <button id="queueBtn" class="btn-ghost">Queue</button>
+      </div>
+      <div style="margin-top:8px" class="row">
+        <input id="scheduleAt" placeholder="Send after ms (e.g., 1000)" />
+        <input id="repeatInterval" placeholder="Repeat every ms (optional)" />
+      </div>
+      <div style="margin-top:8px" class="small">Presets:</div>
+      <div id="presetsList" style="margin-top:6px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="savePreset" class="btn-ghost">Save Preset</button>
+        <button id="importPresets" class="btn-ghost">Import</button>
+        <button id="exportPresets" class="btn-ghost">Export</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 class="small">Headers / Token (local only)</h3>
+      <textarea id="headersEdit" placeholder='{"Authorization":"Bearer ..."}'></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="applyHeaders" class="btn">Apply</button>
+        <button id="clearHeaders" class="btn-ghost">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 class="small">Advanced Tools</h3>
+      <div style="display:flex;gap:6px">
+        <button id="autoReconnect" class="btn-ghost">Auto-Reconnect: Off</button>
+        <button id="startPing" class="btn-ghost">Ping RTT</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button id="speedTest" class="btn-ghost">Speed Test</button>
+        <button id="sizeAnalyzer" class="btn-ghost">Size Analyzer</button>
+      </div>
+      <div style="margin-top:8px" class="small">Queue / Schedule supports repeat and delayed sends.</div>
+    </div>
+
+    <div class="panel small">
+      <strong>Saved connections</strong>
+      <div id="savedList"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="saveConn" class="btn-ghost">Save</button>
+        <button id="clearSaved" class="btn-ghost">Clear</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <div class="stat-grid">
+        <div class="stat">Sent<br/><strong id="sentCount">0</strong></div>
+        <div class="stat">Recv<br/><strong id="recvCount">0</strong></div>
+        <div class="stat">Errors<br/><strong id="errCount">0</strong></div>
+        <div class="stat">RTT (ms)<br/><strong id="rtt">—</strong></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="logSearch" placeholder="Search logs..." />
+        <div style="width:200px;display:flex;gap:6px">
+          <button id="clearLogs" class="btn-ghost">Clear</button>
+          <button id="exportLogs" class="btn">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs" id="viewTabs">
+      <div class="tab active" data-tab="log">Log</div>
+      <div class="tab" data-tab="history">History</div>
+      <div class="tab" data-tab="json">JSON</div>
+      <div class="tab" data-tab="hex">Binary (hex)</div>
+      <div class="tab" data-tab="errors">Errors</div>
+    </div>
+
+    <div id="log" class="panel"></div>
+    <div id="historyBox" style="display:none" class="panel"></div>
+    <pre id="jsonView" style="display:none" class="panel"></pre>
+    <pre id="hexView" style="display:none" class="panel"></pre>
+    <div id="errorsBox" style="display:none" class="panel"></div>
+
+    <footer>Vesmos — Complete dashboard. Includes original uploaded frontend file for provenance.</footer>
+  </div>
+</div>
+
+<script>
+// Complete dashboard script
+
+// state
+const state = {
+  socket: null,
+  sent:0, recv:0, errs:0,
+  queue: [],
+  autoReconnect: false,
+  presetsKey: 'vesmos_presets_v2',
+  savedKey: 'vesmos_saved_v2'
+};
+
+// elems
+const wsUrl = document.getElementById('wsUrl');
+const subprotocol = document.getElementById('subprotocol');
+const origin = document.getElementById('origin');
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const sendBtn = document.getElementById('sendBtn');
+const msgBox = document.getElementById('msgBox');
+const binaryFile = document.getElementById('binaryFile');
+const sendType = document.getElementById('sendType');
+
+const sentCount = document.getElementById('sentCount');
+const recvCount = document.getElementById('recvCount');
+const errCount = document.getElementById('errCount');
+const rttEl = document.getElementById('rtt');
+
+const logEl = document.getElementById('log');
+const historyEl = document.getElementById('historyBox');
+const jsonView = document.getElementById('jsonView');
+const errorsBox = document.getElementById('errorsBox');
+const hexView = document.getElementById('hexView');
+
+const presetsList = document.getElementById('presetsList');
+const savePresetBtn = document.getElementById('savePreset');
+const importPresetsBtn = document.getElementById('importPresets');
+const exportPresetsBtn = document.getElementById('exportPresets');
+const headersEdit = document.getElementById('headersEdit');
+const applyHeaders = document.getElementById('applyHeaders');
+
+const autoReconnectBtn = document.getElementById('autoReconnect');
+const startPing = document.getElementById('startPing');
+const speedTestBtn = document.getElementById('speedTest');
+const sizeAnalyzerBtn = document.getElementById('sizeAnalyzer');
+
+const savedList = document.getElementById('savedList');
+const saveConnBtn = document.getElementById('saveConn');
+const clearSavedBtn = document.getElementById('clearSaved');
+
+const queueBtn = document.getElementById('queueBtn');
+const scheduleAt = document.getElementById('scheduleAt');
+const repeatInterval = document.getElementById('repeatInterval');
+
+const exportLogsBtn = document.getElementById('exportLogs');
+const clearLogsBtn = document.getElementById('clearLogs');
+
+const viewTabs = document.getElementById('viewTabs');
+
+// helpers
+function appendLog(text, target=logEl){
+  const line = `[${new Date().toLocaleTimeString()}] ${text}`;
+  target.textContent += line + "\n";
+  target.scrollTop = target.scrollHeight;
+}
+
+function updateCounts(){ sentCount.textContent = state.sent; recvCount.textContent = state.recv; errCount.textContent = state.errs; }
+
+// connection
+function connect(){
+  const url = wsUrl.value.trim();
+  if(!url) return alert('Enter WebSocket URL');
+  try{
+    const opts = subprotocol.value ? [subprotocol.value] : undefined;
+    state.socket = new WebSocket(url, opts);
+  }catch(e){
+    appendLog('Failed to create socket: '+e.message, errorsBox);
+    state.errs++; updateCounts(); return;
+  }
+  appendLog('CONNECTING to '+url);
+  state.socket.binaryType = 'arraybuffer';
+  state.socket.onopen = ()=>{ appendLog('OPEN'); state.connectedAt = Date.now(); };
+  state.socket.onmessage = (ev)=>{ state.recv++; updateCounts(); appendLog('RECV: '+ (typeof ev.data === 'string' ? ev.data : '[binary]')); historyEl.textContent = (historyEl.textContent ? historyEl.textContent + '\n---\n' : '') + (typeof ev.data === 'string' ? ev.data : '[binary payload]'); try{ if(typeof ev.data === 'string'){ jsonView.textContent = JSON.stringify(JSON.parse(ev.data), null, 2); } else { // binary -> hex view
+        const bytes = new Uint8Array(ev.data); hexView.textContent = Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join(' '); }
+      }catch(e){ jsonView.textContent = '(Not JSON)\\n' + ev.data; } };
+  state.socket.onerror = (ev)=>{ appendLog('ERROR', errorsBox); state.errs++; updateCounts(); };
+  state.socket.onclose = ()=>{ appendLog('CLOSED', errorsBox); if(state.autoReconnect) setTimeout(connect,1500); };
+  updateCounts();
+}
+
+function disconnect(){
+  if(state.socket) state.socket.close();
+  state.socket = null;
+  appendLog('DISCONNECTED');
+}
+
+// send logic
+function sendNow(){
+
+  if(!state.socket || state.socket.readyState !== 1) return alert('Not connected');
+  const type = sendType.value;
+  if(type === 'binary'){
+    const f = binaryFile.files[0];
+    if(!f) return alert('Select a file to send as binary');
+    const reader = new FileReader();
+    reader.onload = ()=>{ state.socket.send(reader.result); state.sent++; appendLog('SENT: [binary] '+f.name); updateCounts(); };
+    reader.readAsArrayBuffer(f);
+    return;
+  }
+  const msg = msgBox.value;
+  try{
+    state.socket.send(msg);
+    state.sent++; appendLog('SENT: '+msg);
+    updateCounts();
+  }catch(e){ appendLog('Send failed: '+e.message, errorsBox); state.errs++; updateCounts(); }
+}
+
+// queue & scheduler
+queueBtn.addEventListener('click', ()=>{
+  const entry = {msg: msgBox.value, at: Date.now() + (parseInt(scheduleAt.value||0) || 0), repeat: parseInt(repeatInterval.value||0) || 0 };
+  state.queue.push(entry);
+  appendLog('Queued message for '+entry.at);
+});
+
+setInterval(()=>{ // dispatcher
+  const now = Date.now();
+  state.queue = state.queue.filter(ent=>{
+    if(ent.at <= now){
+      if(state.socket && state.socket.readyState===1){
+        state.socket.send(ent.msg);
+        state.sent++; appendLog('Queued SENT: '+ent.msg);
+        updateCounts();
+      }
+      if(ent.repeat && ent.repeat>0){
+        ent.at = now + ent.repeat;
+        return true;
+      }
+      return false;
+    }
+    return true;
+  });
+}, 300);
+
+// presets
+function loadPresets(){ return JSON.parse(localStorage.getItem(state.presetsKey) || '[]'); }
+function renderPresets(){ const p = loadPresets(); presetsList.innerHTML=''; p.forEach((pr, i)=>{ const d=document.createElement('div'); d.style.display='flex'; d.style.justifyContent='space-between'; d.style.marginTop='6px'; const left=document.createElement('div'); left.textContent = pr.name; left.onclick = ()=> msgBox.value = pr.msg; const right=document.createElement('div'); const del=document.createElement('button'); del.textContent='Del'; del.onclick=()=>{ p.splice(i,1); localStorage.setItem(state.presetsKey, JSON.stringify(p)); renderPresets(); }; right.appendChild(del); d.appendChild(left); d.appendChild(right); presetsList.appendChild(d); }); }
+savePresetBtn.addEventListener('click', ()=>{ const name = prompt('Preset name'); if(!name) return; const p = loadPresets(); p.unshift({name, msg: msgBox.value}); localStorage.setItem(state.presetsKey, JSON.stringify(p)); renderPresets(); });
+
+// import/export presets
+importPresetsBtn.addEventListener('click', ()=>{ const f = document.createElement('input'); f.type='file'; f.accept='application/json'; f.onchange = e=>{ const file = e.target.files[0]; if(!file) return; const r = new FileReader(); r.onload = ()=>{ try{ const data = JSON.parse(r.result); localStorage.setItem(state.presetsKey, JSON.stringify(data)); renderPresets(); alert('Imported'); }catch(err){ alert('Invalid file'); } }; r.readAsText(file); }; f.click(); });
+exportPresetsBtn.addEventListener('click', ()=>{ const data = JSON.stringify(loadPresets()); const blob = new Blob([data], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='vesmos_presets.json'; a.click(); });
+
+// headers apply
+applyHeaders.addEventListener('click', ()=>{ const v = headersEdit.value.trim(); if(!v) return alert('Enter headers JSON'); try{ const h = JSON.parse(v); // saved locally only
+  localStorage.setItem('vesmos_headers', JSON.stringify(h)); appendLog('Headers applied (local only)'); }catch(e){ alert('Invalid JSON'); } });
+
+// auto reconnect
+autoReconnectBtn.addEventListener('click', ()=>{ state.autoReconnect = !state.autoReconnect; autoReconnectBtn.textContent = 'Auto-Reconnect: ' + (state.autoReconnect ? 'On' : 'Off'); });
+
+// ping RTT
+startPing.addEventListener('click', ()=>{ if(!state.socket || state.socket.readyState!==1) return alert('Connect first'); const ts = Date.now(); const payload = JSON.stringify({type:'vesmos_ping', t: ts}); function onmsg(ev){ try{ const d = typeof ev.data === 'string' ? JSON.parse(ev.data) : null; if(d && d.t === ts){ const rtt = Date.now() - ts; rttEl.textContent = rtt; state.socket.removeEventListener('message', onmsg); appendLog('Ping RTT: '+rtt+'ms'); } }catch(e){} } state.socket.addEventListener('message', onmsg); state.socket.send(payload); appendLog('Ping sent'); });
+
+// speed test (simple)
+speedTestBtn.addEventListener('click', async ()=>{ if(!state.socket || state.socket.readyState!==1) return alert('Connect first'); const runs = 5; const times = []; for(let i=0;i<runs;i++){ const t = Date.now(); const p = 'x'.repeat(200); state.socket.send(p); await new Promise(res=>{ const h=(ev)=>{ times.push(Date.now()-t); state.socket.removeEventListener('message', h); res(); }; state.socket.addEventListener('message', h); }); } const avg = Math.round(times.reduce((a,b)=>a+b,0)/times.length); appendLog('Speed test avg RTT: '+avg+'ms'); alert('Avg RTT: '+avg+'ms'); });
+
+// size analyzer
+sizeAnalyzerBtn.addEventListener('click', ()=>{ const sizes = []; // approximate from history entries if any
+  const lines = historyEl.textContent.split('\n---\n'); lines.forEach(l=>{ if(l) sizes.push(new Blob([l]).size); }); const avg = sizes.length ? Math.round(sizes.reduce((a,b)=>a+b,0)/sizes.length) : 0; alert('Avg message size (history): '+avg+' bytes'); appendLog('Size analyzer result: '+avg+' bytes'); });
+
+// saved connections
+function renderSaved(){ const arr = JSON.parse(localStorage.getItem(state.savedKey) || '[]'); savedList.innerHTML=''; arr.forEach((u,i)=>{ const d=document.createElement('div'); d.style.display='flex'; d.style.justifyContent='space-between'; d.style.marginTop='6px'; const left=document.createElement('div'); left.textContent = u; const right=document.createElement('div'); const load=document.createElement('button'); load.textContent='Load'; load.onclick=()=>wsUrl.value=u; const conn=document.createElement('button'); conn.textContent='Conn'; conn.onclick=()=>{ wsUrl.value=u; connect(); }; const del=document.createElement('button'); del.textContent='Del'; del.onclick=()=>{ arr.splice(i,1); localStorage.setItem(state.savedKey, JSON.stringify(arr)); renderSaved(); }; right.appendChild(load); right.appendChild(conn); right.appendChild(del); d.appendChild(left); d.appendChild(right); savedList.appendChild(d); }); }
+saveConnBtn.addEventListener('click', ()=>{ const url = wsUrl.value.trim(); if(!url) return alert('Enter URL'); const arr = JSON.parse(localStorage.getItem(state.savedKey) || '[]'); if(!arr.includes(url)) arr.unshift(url); localStorage.setItem(state.savedKey, JSON.stringify(arr)); renderSaved(); });
+clearSavedBtn.addEventListener('click', ()=>{ localStorage.removeItem(state.savedKey); renderSaved(); });
+
+// connect/disconnect/send bindings
+connectBtn.addEventListener('click', connect);
+disconnectBtn.addEventListener('click', disconnect);
+sendBtn.addEventListener('click', sendNow);
+
+// binary file toggle
+sendType.addEventListener('change', ()=>{ if(sendType.value==='binary') binaryFile.style.display='block'; else binaryFile.style.display='none'; });
+
+// export logs
+exportLogsBtn.addEventListener('click', ()=>{ const blob = new Blob([logEl.textContent], {type:'text/plain'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='vesmos_logs.txt'; a.click(); });
+
+// clear logs
+clearLogsBtn.addEventListener('click', ()=>{ logEl.textContent=''; historyEl.textContent=''; jsonView.textContent=''; hexView.textContent=''; errorsBox.textContent=''; });
+
+// view tabs
+viewTabs.addEventListener('click', (e)=>{ const t = e.target; if(!t.dataset || !t.dataset.tab) return; document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active'); ['log','historyBox','jsonView','hexView','errorsBox'].forEach(id=>document.getElementById(id).style.display='none'); // map
+  const map = {log:'log', history:'historyBox', json:'jsonView', hex:'hexView', errors:'errorsBox'}; const el = map[t.dataset.tab]; if(el) document.getElementById(el).style.display='block'; });
+
+// log search
+document.getElementById('logSearch').addEventListener('input', function(){ const q = this.value.toLowerCase().trim(); if(!q) return; const lines = logEl.textContent.split('\n'); logEl.textContent = lines.filter(l=>l.toLowerCase().includes(q)).join('\n'); });
+
+// persist and render presets/saved
+renderPresets(); renderSaved();
+
+// expose helpers
+window.vesmos = { state, connect, disconnect, sendNow };
+
+appendLog('Vesmos complete dashboard ready.'); 
+</script>
+</body>
+</html>
